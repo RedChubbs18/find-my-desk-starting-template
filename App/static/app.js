@@ -4,6 +4,11 @@ const state = {
   selectedDeskId: null,
   selectedSlot: "full",
   recommendedDeskIds: [],
+  teamBlock: {
+    selectedEmails: [],
+    recommendedDeskIds: [],
+    pod: null,
+  },
   desks: [],
   bookings: {},
   user: null,
@@ -17,6 +22,11 @@ const state = {
   validDeskPreferences: [],
   busyness: null,
   weather: null,
+  userHistory: {
+    favouriteDesks: [],
+    favouriteFloors: [],
+    favouriteZones: [],
+  },
 };
 
 const bookingDateInput = document.getElementById("bookingDate");
@@ -51,6 +61,15 @@ const weatherTemperature = document.getElementById("weatherTemperature");
 const weatherSource = document.getElementById("weatherSource");
 const weatherIcon = document.getElementById("weatherIcon");
 const weatherPanel = document.getElementById("weatherPanel");
+const reportsWindowSelect = document.getElementById("reportsWindow");
+const reportsMeta = document.getElementById("reportsMeta");
+const teamBlockEmpty = document.getElementById("teamBlockEmpty");
+const teamBlockPicker = document.getElementById("teamBlockPicker");
+const teamBlockControls = document.getElementById("teamBlockControls");
+const teamBlockFindButton = document.getElementById("teamBlockFindButton");
+const teamBlockConfirmButton = document.getElementById("teamBlockConfirmButton");
+const teamBlockMeta = document.getElementById("teamBlockMeta");
+const teamBlockResult = document.getElementById("teamBlockResult");
 const TEAM_NEARBY_DISTANCE = 18;
 
 async function loadDeskPreferenceOptions() {
@@ -83,6 +102,19 @@ function renderDeskPreferenceOptions() {
     label.append(input, ` ${formatPreference(value)}`);
     deskPreferencesGrid.appendChild(label);
   });
+}
+
+async function loadUserHistory() {
+  try {
+    const data = await fetchJSON("/api/reports?days=90");
+    state.userHistory = {
+      favouriteDesks: Array.isArray(data.favouriteDesks) ? data.favouriteDesks : [],
+      favouriteFloors: Array.isArray(data.byFloor) ? data.byFloor : [],
+      favouriteZones: Array.isArray(data.byZone) ? data.byZone : [],
+    };
+  } catch {
+    state.userHistory = { favouriteDesks: [], favouriteFloors: [], favouriteZones: [] };
+  }
 }
 
 async function loadSettings() {
@@ -148,8 +180,18 @@ function getUserBookingOnDesk(desk) {
   const myEmail = (state.user?.email || "").toLowerCase();
   if (!myEmail) return null;
   return getDeskOccupants(desk).find(
-    (booking) => String(booking.email || "").toLowerCase() === myEmail
+    (booking) =>
+      String(booking.email || "").toLowerCase() === myEmail ||
+      String(booking.bookedByEmail || "").toLowerCase() === myEmail
   ) || null;
+}
+
+function isBookingCancellableByMe(booking) {
+  const myEmail = (state.user?.email || "").toLowerCase();
+  if (!myEmail || !booking) return false;
+  const owner = String(booking.email || "").toLowerCase();
+  const booker = String(booking.bookedByEmail || "").toLowerCase();
+  return owner === myEmail || booker === myEmail;
 }
 
 function computeAvailableSlots(desk) {
@@ -405,18 +447,106 @@ function setFloor(floor) {
   renderFloorSummary();
 }
 
+function rankDesksByHistory() {
+  const history = state.userHistory || {};
+  const deskWeight = new Map();
+  (history.favouriteDesks || []).forEach((d) => deskWeight.set(d.deskId, d.deskDays || 0));
+  const zoneWeight = new Map();
+  (history.favouriteZones || []).forEach((z) => zoneWeight.set(z.zone, z.deskDays || 0));
+  const floorWeight = new Map();
+  (history.favouriteFloors || []).forEach((f) => floorWeight.set(f.floor, f.deskDays || 0));
+
+  if (deskWeight.size === 0 && zoneWeight.size === 0 && floorWeight.size === 0) {
+    return [];
+  }
+
+  const ranked = state.desks
+    .map((desk) => {
+      const slots = desk.slots || {};
+      const fullyBooked = Boolean(slots.full) || (slots.am && slots.pm);
+      if (fullyBooked) return null;
+
+      const exact = deskWeight.get(desk.id) || 0;
+      const zone = zoneWeight.get(desk.zone) || 0;
+      const floor = floorWeight.get(desk.floor) || 0;
+      const score = exact * 10 + zone * 2 + floor * 1;
+      if (score <= 0) return null;
+
+      const reasons = [];
+      if (exact > 0) {
+        reasons.push(`booked ${exact} day${exact === 1 ? "" : "s"} recently`);
+      } else if (zone > 0) {
+        reasons.push(`in ${desk.zone} — where you usually sit`);
+      } else if (floor > 0) {
+        reasons.push(`on ${formatPreference(desk.floor)} floor — your usual floor`);
+      }
+      return { desk, score, reasons };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score || a.desk.id.localeCompare(b.desk.id));
+
+  return ranked;
+}
+
+function renderHistoryRecommendations(ranked) {
+  const visible = ranked.filter(({ desk }) => desk.floor === state.currentFloor);
+  const topVisible = visible.slice(0, 3);
+  state.recommendedDeskIds = topVisible.map(({ desk }) => desk.id);
+
+  const floorLabel = formatPreference(state.currentFloor);
+  recommendationMeta.textContent = `Based on your last 90 days. Showing your top ${topVisible.length} desk${topVisible.length === 1 ? "" : "s"} on ${floorLabel} floor.`;
+
+  if (visible.length === 0) {
+    recommendedDeskList.innerHTML = `<li class='muted'>No matching desks on ${floorLabel} floor.</li>`;
+    return;
+  }
+
+  topVisible.forEach(({ desk, reasons }) => {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "recommendation-item";
+    button.addEventListener("click", () => {
+      setFloor(desk.floor);
+      setSelectedDesk(desk.id);
+    });
+
+    const title = createElement("strong", `Desk ${deskLabel(desk.id)}`);
+    const detailsText = `${desk.zone} • ${reasons.join(" • ")}`;
+    const details = createElement("span", detailsText);
+    button.append(title, details);
+    item.appendChild(button);
+    recommendedDeskList.appendChild(item);
+  });
+}
+
 function renderRecommendations() {
   if (!recommendedDeskList || !recommendationMeta) return;
 
   recommendedDeskList.innerHTML = "";
   state.recommendedDeskIds = [];
+
+  const myBookings = userBookingsForCurrentDate();
+  if (myBookings.length > 0) {
+    const deskIds = [...new Set(myBookings.map((b) => deskLabel(b.deskId)))];
+    recommendationMeta.textContent = `You're already booked at desk ${deskIds.join(", ")} for ${selectedDate()}.`;
+    return;
+  }
+
   const preferences = getProfilePreferences();
   const hasPreferredUsers = state.settings.preferredUsers.length > 0;
 
-  if (preferences.length === 0 && !hasPreferredUsers) {
-    recommendationMeta.textContent = "Set your preferences in Settings to see personalised recommendations.";
-    recommendedDeskList.innerHTML = "";
-    return;
+  if (preferences.length === 0) {
+    const historyRanked = rankDesksByHistory();
+    if (historyRanked.length > 0) {
+      renderHistoryRecommendations(historyRanked);
+      return;
+    }
+    if (!hasPreferredUsers) {
+      recommendationMeta.textContent = "Set your preferences in Settings to see personalised recommendations.";
+      recommendedDeskList.innerHTML = "";
+      return;
+    }
   }
 
   if (state.desks.length === 0) {
@@ -497,6 +627,187 @@ function renderRecommendations() {
     item.appendChild(button);
     recommendedDeskList.appendChild(item);
   });
+}
+
+function getTeammatesForBlock() {
+  const myTeam = currentUserTeam();
+  if (!myTeam) return [];
+  return state.users
+    .filter((user) => {
+      const team = String(user.team || "").trim().toLowerCase();
+      return team && team === myTeam;
+    })
+    .sort((a, b) => (a.fullName || "").localeCompare(b.fullName || ""));
+}
+
+function teamBlockSlotValue() {
+  const checked = document.querySelector('input[name="teamBlockSlot"]:checked');
+  return checked ? checked.value : "full";
+}
+
+function renderTeamBlockPicker() {
+  if (!teamBlockPicker || !teamBlockEmpty || !teamBlockControls) return;
+  const teammates = getTeammatesForBlock();
+  const myEmail = (state.user?.email || "").toLowerCase();
+
+  state.teamBlock.selectedEmails = state.teamBlock.selectedEmails.filter((email) =>
+    teammates.some((t) => (t.email || "").toLowerCase() === email)
+  );
+  if (myEmail && teammates.some((t) => (t.email || "").toLowerCase() === myEmail)
+    && !state.teamBlock.selectedEmails.includes(myEmail)) {
+    state.teamBlock.selectedEmails.unshift(myEmail);
+  }
+
+  if (teammates.length === 0) {
+    teamBlockEmpty.classList.remove("hidden");
+    teamBlockPicker.classList.add("hidden");
+    teamBlockControls.classList.add("hidden");
+    teamBlockPicker.innerHTML = "";
+    clearTeamBlockResult("Set your team on your profile to see teammates here.");
+    return;
+  }
+
+  teamBlockEmpty.classList.add("hidden");
+  teamBlockPicker.classList.remove("hidden");
+  teamBlockControls.classList.remove("hidden");
+
+  teamBlockPicker.innerHTML = "";
+  teammates.forEach((user) => {
+    const email = (user.email || "").toLowerCase();
+    const isMe = email === myEmail;
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = email;
+    input.checked = state.teamBlock.selectedEmails.includes(email);
+    if (input.checked) label.classList.add("checked");
+    input.addEventListener("change", () => {
+      if (input.checked) {
+        if (!state.teamBlock.selectedEmails.includes(email)) {
+          state.teamBlock.selectedEmails.push(email);
+        }
+        label.classList.add("checked");
+      } else {
+        state.teamBlock.selectedEmails = state.teamBlock.selectedEmails.filter((e) => e !== email);
+        label.classList.remove("checked");
+      }
+      clearTeamBlockResult();
+      updateTeamBlockConfirmState();
+    });
+    const displayName = `${user.fullName || email}${isMe ? " (you)" : ""}`;
+    label.append(input, ` ${displayName}`);
+    teamBlockPicker.appendChild(label);
+  });
+
+  updateTeamBlockConfirmState();
+}
+
+function updateTeamBlockConfirmState() {
+  if (!teamBlockConfirmButton) return;
+  const matches =
+    state.teamBlock.recommendedDeskIds.length > 0 &&
+    state.teamBlock.recommendedDeskIds.length === state.teamBlock.selectedEmails.length;
+  teamBlockConfirmButton.disabled = !matches;
+}
+
+function clearTeamBlockResult(message) {
+  state.teamBlock.recommendedDeskIds = [];
+  state.teamBlock.pod = null;
+  if (teamBlockResult) teamBlockResult.innerHTML = "";
+  if (teamBlockMeta) teamBlockMeta.textContent = message || "";
+  updateTeamBlockConfirmState();
+  if (typeof renderDeskPins === "function") renderDeskPins();
+}
+
+function renderTeamBlockResult(deskIds, teammates, info) {
+  if (!teamBlockResult) return;
+  teamBlockResult.innerHTML = "";
+  deskIds.forEach((deskId, i) => {
+    const user = teammates[i];
+    const li = document.createElement("li");
+    const name = createElement("span", user?.fullName || user?.email || "Teammate");
+    const tag = createElement("span", `Desk ${deskLabel(deskId)}`);
+    tag.className = "desk-tag";
+    li.append(name, tag);
+    teamBlockResult.appendChild(li);
+  });
+  if (teamBlockMeta) {
+    const pods = Array.isArray(info?.pods) && info.pods.length > 0
+      ? info.pods
+      : info?.pod ? [info.pod] : [];
+    const podLabel = pods.length > 1 ? `Pods ${pods.join(" + ")}` : pods.length === 1 ? `Pod ${pods[0]}` : "Block";
+    const where = info?.floor
+      ? `${info.floor === "first" ? "First" : "Ground"} floor • ${info.zone || ""}`
+      : "";
+    teamBlockMeta.textContent = `${podLabel}${where ? ` — ${where}` : ""}. Confirm to book.`;
+  }
+}
+
+async function findTeamBlock() {
+  if (!teamBlockFindButton) return;
+  const selected = state.teamBlock.selectedEmails;
+  if (selected.length < 2) {
+    clearTeamBlockResult("Pick at least 2 teammates to find a block.");
+    return;
+  }
+  if (selected.length > 12) {
+    clearTeamBlockResult("Pick 12 or fewer teammates.");
+    return;
+  }
+  teamBlockFindButton.disabled = true;
+  try {
+    const payload = await fetchJSON("/api/team-block-recommend", {
+      method: "POST",
+      body: JSON.stringify({
+        count: selected.length,
+        slot: teamBlockSlotValue(),
+        date: selectedDate(),
+        floor: state.currentFloor,
+      }),
+    });
+    if (!payload.deskIds || payload.deskIds.length === 0) {
+      clearTeamBlockResult(payload.message || "No adjacent block of that size is free.");
+      return;
+    }
+    state.teamBlock.recommendedDeskIds = payload.deskIds;
+    state.teamBlock.pod = payload.pod || (payload.pods || []).join(" + ") || null;
+    const teammates = selected.map((email) => getUserByEmail(email)).filter(Boolean);
+    renderTeamBlockResult(payload.deskIds, teammates, payload);
+    if (payload.floor && payload.floor !== state.currentFloor) {
+      setFloor(payload.floor);
+    }
+    renderDeskPins();
+    updateTeamBlockConfirmState();
+  } catch (error) {
+    clearTeamBlockResult(error.message);
+  } finally {
+    teamBlockFindButton.disabled = false;
+  }
+}
+
+async function confirmTeamBlock() {
+  const deskIds = state.teamBlock.recommendedDeskIds;
+  const emails = state.teamBlock.selectedEmails;
+  if (deskIds.length === 0 || deskIds.length !== emails.length) return;
+  teamBlockConfirmButton.disabled = true;
+  try {
+    const assignments = deskIds.map((deskId, i) => ({ deskId, email: emails[i] }));
+    await fetchJSON("/api/bookings/team-block", {
+      method: "POST",
+      body: JSON.stringify({
+        date: selectedDate(),
+        slot: teamBlockSlotValue(),
+        assignments,
+      }),
+    });
+    clearTeamBlockResult(`Booked ${deskIds.length} adjacent desks for your team.`);
+    state.teamBlock.selectedEmails = [];
+    renderTeamBlockPicker();
+    await loadDesksAndBookings();
+  } catch (error) {
+    window.alert(error.message);
+    teamBlockConfirmButton.disabled = false;
+  }
 }
 
 async function fetchJSON(url, options = {}) {
@@ -593,6 +904,16 @@ function renderSelectedDesk() {
     ? `Same team as you${teamName ? ` (${teamName})` : ""}`
     : "";
 
+  const myEmail = (state.user?.email || "").toLowerCase();
+  const bookedByMe = occupants.filter(
+    (b) =>
+      String(b.bookedByEmail || "").toLowerCase() === myEmail &&
+      String(b.email || "").toLowerCase() !== myEmail
+  );
+  const bookerLine = bookedByMe.length > 0
+    ? `Booked by you for ${bookedByMe.map((b) => b.name).join(" / ")}`
+    : "";
+
   const children = [
     createElement("h4", `Desk ${deskLabel(desk.id)} · ${desk.zone}`),
     createElement("p", features || "No features listed"),
@@ -605,6 +926,7 @@ function renderSelectedDesk() {
   if (prefMatch) children.push(createElement("p", prefMatch));
   if (neighborHint) children.push(createElement("p", neighborHint));
   if (teammateLine) children.push(createElement("p", teammateLine));
+  if (bookerLine) children.push(createElement("p", bookerLine));
   selectedDeskCard.replaceChildren(...children);
 
   const available = computeAvailableSlots(desk);
@@ -733,10 +1055,15 @@ async function switchActiveUser(email) {
     body: JSON.stringify({ email }),
   });
 
+  state.teamBlock = { selectedEmails: [], recommendedDeskIds: [], pod: null };
   await loadMe();
   await loadUsers();
   await refreshSettingsFromDb();
+  await loadUserHistory();
   await loadDesksAndBookings();
+  if (state.currentView === "reports") {
+    loadReports();
+  }
 }
 
 function renderFloorSummary() {
@@ -834,13 +1161,13 @@ function tintForBooking(booking) {
 function renderDeskPins() {
   deskLayer.innerHTML = "";
   const recommendedDeskIds = new Set(state.recommendedDeskIds);
+  const teamBlockDeskIds = new Set(state.teamBlock.recommendedDeskIds);
   const visibleDesks = state.desks.filter((desk) => desk.floor === state.currentFloor);
 
   visibleDesks.forEach((desk) => {
     const pin = pinTemplate.content.firstElementChild.cloneNode(true);
     pin.style.left = `${desk.x}%`;
     pin.style.top = `${desk.y}%`;
-    pin.textContent = deskLabel(desk.id);
     pin.dataset.deskId = desk.id;
     const isRecommended = recommendedDeskIds.has(desk.id);
 
@@ -866,6 +1193,7 @@ function renderDeskPins() {
     pin.classList.toggle("half-pm-booked", halfPm);
     pin.classList.toggle("selected", state.selectedDeskId === desk.id);
     pin.classList.toggle("recommended", isRecommended);
+    pin.classList.toggle("team-block", teamBlockDeskIds.has(desk.id));
     pin.classList.toggle("pref-mismatch", !isRecommended && !deskMatchesPreferences(desk));
     pin.classList.toggle("booked-by-teammate", fullyBooked && isBookedByTeammate && !isBookedByPreferredUser);
     pin.classList.toggle("booked-by-preferred", fullyBooked && isBookedByPreferredUser);
@@ -877,6 +1205,20 @@ function renderDeskPins() {
       if (amTint) pin.dataset.amTint = amTint; else delete pin.dataset.amTint;
       if (pmTint) pin.dataset.pmTint = pmTint; else delete pin.dataset.pmTint;
     }
+
+    let statusGlyph;
+    if (fullyBooked) {
+      statusGlyph = isBookedByPreferredUser ? "♥" : isBookedByTeammate ? "⚑" : "✕";
+    } else if (halfAm) {
+      statusGlyph = "◐";
+    } else if (halfPm) {
+      statusGlyph = "◑";
+    } else if (isRecommended) {
+      statusGlyph = "★";
+    } else {
+      statusGlyph = "✓";
+    }
+    pin.textContent = statusGlyph;
 
     if (fullTaken) {
       pin.title = `Desk ${deskLabel(desk.id)} fully booked`;
@@ -911,6 +1253,7 @@ async function loadUsers() {
   renderSelectedPreferredUsers();
   renderPreferredUserResults(preferredUserSearch?.value || "");
   renderRecommendations();
+  renderTeamBlockPicker();
 }
 
 async function loadDesksAndBookings() {
@@ -979,10 +1322,14 @@ function userBookingsForCurrentDate() {
 function syncReleaseDeskButton() {
   if (!releaseDeskButton) return;
   const mine = userBookingsForCurrentDate();
-  releaseDeskButton.disabled = mine.length === 0;
-  releaseDeskButton.title = mine.length === 0
-    ? "You have no bookings to release for this day"
-    : `Release ${mine.length} booking${mine.length === 1 ? "" : "s"} for ${selectedDate()}`;
+  const hasBookings = mine.length > 0;
+  releaseDeskButton.hidden = !hasBookings;
+  releaseDeskButton.disabled = !hasBookings;
+  if (hasBookings) {
+    releaseDeskButton.title = `Release ${mine.length} booking${mine.length === 1 ? "" : "s"} for ${selectedDate()}`;
+  } else {
+    releaseDeskButton.removeAttribute("title");
+  }
 }
 
 function extendableHalfBookings() {
@@ -1082,6 +1429,296 @@ async function cancelBooking() {
   }
 }
 
+async function loadReports() {
+  const days = reportsWindowSelect ? Number(reportsWindowSelect.value) || 30 : 30;
+  if (reportsMeta) reportsMeta.textContent = `Loading the last ${days} days...`;
+
+  try {
+    const payload = await fetchJSON(`/api/reports?days=${days}`);
+    renderReports(payload);
+  } catch (error) {
+    if (reportsMeta) reportsMeta.textContent = `Unable to load reports: ${error.message}`;
+  }
+}
+
+function renderReports(data) {
+  if (!data) return;
+
+  const range = data.range || {};
+  const title = document.getElementById("reportsTitle");
+  if (title) {
+    const name = data.user?.name || "Your";
+    title.textContent = `${name}'s usage`;
+  }
+  if (reportsMeta) {
+    reportsMeta.textContent = `${range.start} → ${range.end} · ${range.weekdaysInWindow} weekdays in window`;
+  }
+
+  renderReportStats(data.summary || {}, range);
+  renderFavouriteDesks(data.favouriteDesks || []);
+  renderSlotSplit(data.slotSplit || { full: 0, am: 0, pm: 0 });
+  renderFloorZone(data.byFloor || [], data.byZone || []);
+  renderWeekdayPattern(data.weekdayPattern || []);
+  renderAnchorAdherence(data.anchorAdherence || { configured: false });
+  renderCoLocation(data.coLocation || { configured: false, perUser: [] });
+}
+
+function renderReportStats(summary, range) {
+  const container = document.getElementById("reportStats");
+  if (!container) return;
+  container.innerHTML = "";
+
+  const stats = [
+    {
+      label: "Days in office",
+      value: summary.totalDays ?? 0,
+      sub: `${summary.fullDays ?? 0} full-day · ${summary.halfDays ?? 0} half-day bookings`,
+      tone: "brand",
+    },
+    {
+      label: "Attendance",
+      value: `${summary.attendancePct ?? 0}%`,
+      sub: `of ${range.weekdaysInWindow ?? 0} weekdays`,
+      tone: attendanceTone(summary.attendancePct),
+    },
+    {
+      label: "Desk-days booked",
+      value: summary.deskDays ?? 0,
+      sub: `${summary.totalBookings ?? 0} bookings total`,
+      tone: "neutral",
+    },
+  ];
+
+  stats.forEach((stat) => {
+    const card = document.createElement("div");
+    card.className = `stat-card tone-${stat.tone}`;
+    card.append(
+      createElement("span", stat.label),
+      createElement("strong", String(stat.value)),
+      createElement("small", stat.sub)
+    );
+    card.querySelector("span").className = "stat-label";
+    card.querySelector("small").className = "stat-sub";
+    container.appendChild(card);
+  });
+}
+
+function attendanceTone(pct) {
+  if (pct === undefined || pct === null) return "neutral";
+  if (pct >= 60) return "good";
+  if (pct >= 30) return "warn";
+  return "neutral";
+}
+
+function renderFavouriteDesks(desks) {
+  const container = document.getElementById("reportFavouriteDesks");
+  if (!container) return;
+  container.innerHTML = "";
+  if (desks.length === 0) {
+    container.innerHTML = "<p class='muted'>No desks booked in this window.</p>";
+    return;
+  }
+  const top = desks.slice(0, 5);
+  const max = Math.max(...top.map((d) => d.deskDays), 0.5);
+  top.forEach((desk, index) => {
+    const row = document.createElement("div");
+    row.className = "desk-row";
+    const rank = createElement("span", `#${index + 1}`);
+    rank.className = "desk-rank";
+    const body = document.createElement("div");
+    body.className = "desk-body";
+    body.append(
+      createElement("strong", `Desk ${desk.deskId.toUpperCase()}`),
+      createElement("span", `${formatPreference(desk.floor)} · ${desk.zone}`)
+    );
+    const track = document.createElement("div");
+    track.className = "bar-track";
+    const fill = document.createElement("div");
+    fill.className = "bar-fill brand";
+    fill.style.width = `${(desk.deskDays / max) * 100}%`;
+    track.appendChild(fill);
+    const value = createElement("span", `${desk.deskDays} day${desk.deskDays === 1 ? "" : "s"}`);
+    value.className = "desk-value";
+    row.append(rank, body, track, value);
+    container.appendChild(row);
+  });
+}
+
+function renderSlotSplit(split) {
+  const container = document.getElementById("reportSlotSplit");
+  if (!container) return;
+  const total = (split.full || 0) + (split.am || 0) + (split.pm || 0);
+  container.innerHTML = "";
+  if (total === 0) {
+    container.innerHTML = "<p class='muted'>No bookings in this window.</p>";
+    return;
+  }
+
+  const items = [
+    { key: "full", label: "Full day", count: split.full || 0 },
+    { key: "am", label: "AM only", count: split.am || 0 },
+    { key: "pm", label: "PM only", count: split.pm || 0 },
+  ];
+  items.forEach((item) => {
+    const pct = Math.round((item.count / total) * 100);
+    const row = document.createElement("div");
+    row.className = "bar-row";
+    const label = createElement("span", item.label);
+    label.className = "bar-label";
+    const track = document.createElement("div");
+    track.className = "bar-track";
+    const fill = document.createElement("div");
+    fill.className = `bar-fill slot-${item.key}`;
+    fill.style.width = `${pct}%`;
+    track.appendChild(fill);
+    const value = createElement("span", `${item.count} · ${pct}%`);
+    value.className = "bar-value";
+    row.append(label, track, value);
+    container.appendChild(row);
+  });
+}
+
+function renderFloorZone(floors, zones) {
+  const container = document.getElementById("reportFloorZone");
+  if (!container) return;
+  container.innerHTML = "";
+
+  const renderGroup = (title, items, key) => {
+    const wrap = document.createElement("div");
+    wrap.className = "dual-list-group";
+    wrap.appendChild(createElement("h4", title));
+    if (items.length === 0) {
+      const empty = createElement("p", "No data");
+      empty.className = "muted";
+      wrap.appendChild(empty);
+      return wrap;
+    }
+    items.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "bar-row";
+      const label = createElement("span", formatPreference(item[key]));
+      label.className = "bar-label";
+      const track = document.createElement("div");
+      track.className = "bar-track";
+      const fill = document.createElement("div");
+      fill.className = "bar-fill brand";
+      fill.style.width = `${item.pct}%`;
+      track.appendChild(fill);
+      const value = createElement("span", `${item.pct}%`);
+      value.className = "bar-value";
+      row.append(label, track, value);
+      wrap.appendChild(row);
+    });
+    return wrap;
+  };
+
+  container.append(renderGroup("Floor", floors, "floor"), renderGroup("Zone", zones, "zone"));
+}
+
+function renderWeekdayPattern(days) {
+  const container = document.getElementById("reportWeekday");
+  if (!container) return;
+  container.innerHTML = "";
+  const max = Math.max(...days.map((d) => d.days), 1);
+  days.forEach((day) => {
+    const col = document.createElement("div");
+    col.className = "weekday-col";
+    const bar = document.createElement("div");
+    bar.className = "weekday-bar";
+    const fill = document.createElement("div");
+    fill.className = "weekday-fill";
+    fill.style.height = `${(day.days / max) * 100}%`;
+    if (day.days === 0) fill.classList.add("empty");
+    bar.appendChild(fill);
+    col.append(
+      createElement("strong", String(day.days)),
+      bar,
+      createElement("span", day.label.slice(0, 3))
+    );
+    container.appendChild(col);
+  });
+}
+
+function renderAnchorAdherence(anchor) {
+  const container = document.getElementById("reportAnchor");
+  const hint = document.getElementById("anchorHint");
+  if (!container) return;
+  container.innerHTML = "";
+
+  if (!anchor.configured) {
+    if (hint) hint.textContent = "Set anchor days in User Settings to see how well you stick to them.";
+    container.innerHTML = "<p class='muted'>No anchor days configured.</p>";
+    return;
+  }
+
+  if (hint) {
+    hint.textContent = `Your anchor days: ${(anchor.anchorLabels || []).join(", ") || "—"}`;
+  }
+
+  const ring = document.createElement("div");
+  ring.className = "anchor-ring";
+  ring.style.setProperty("--pct", anchor.pct);
+  ring.append(
+    createElement("strong", `${anchor.pct}%`),
+    createElement("span", "on anchor")
+  );
+
+  const stats = document.createElement("div");
+  stats.className = "anchor-stats";
+  const items = [
+    { label: "On anchor", value: anchor.onAnchor, tone: "good" },
+    { label: "Off anchor", value: anchor.offAnchor, tone: "warn" },
+    { label: "Missed anchor", value: anchor.missedAnchor, tone: "muted" },
+  ];
+  items.forEach((item) => {
+    const pill = document.createElement("div");
+    pill.className = `anchor-pill tone-${item.tone}`;
+    pill.append(createElement("strong", String(item.value)), createElement("span", item.label));
+    stats.appendChild(pill);
+  });
+
+  container.append(ring, stats);
+}
+
+function renderCoLocation(co) {
+  const container = document.getElementById("reportCoLocation");
+  const hint = document.getElementById("coLocationHint");
+  if (!container) return;
+  container.innerHTML = "";
+
+  if (!co.configured) {
+    if (hint) hint.textContent = "Add preferred colleagues in User Settings to track how often you sit together.";
+    container.innerHTML = "<p class='muted'>No preferred colleagues configured.</p>";
+    return;
+  }
+
+  if (co.totals && co.totals.sharedDays === 0) {
+    container.innerHTML = "<p class='muted'>You and your preferred colleagues haven't overlapped in office yet.</p>";
+    return;
+  }
+
+  co.perUser.forEach((row) => {
+    const card = document.createElement("div");
+    card.className = "co-row";
+    const left = document.createElement("div");
+    left.className = "co-name";
+    left.append(
+      createElement("strong", row.name),
+      createElement("span", row.team || "—")
+    );
+    const track = document.createElement("div");
+    track.className = "bar-track";
+    const fill = document.createElement("div");
+    fill.className = "bar-fill brand";
+    fill.style.width = `${row.pct}%`;
+    track.appendChild(fill);
+    const value = createElement("span", `${row.coLocatedDays}/${row.sharedDays} · ${row.pct}%`);
+    value.className = "co-value";
+    card.append(left, track, value);
+    container.appendChild(card);
+  });
+}
+
 function bindEvents() {
   document.querySelectorAll(".nav-tab").forEach((button) => {
     button.addEventListener("click", async (e) => {
@@ -1097,9 +1734,19 @@ function bindEvents() {
         }
       }
 
+      if (viewName === "reports") {
+        switchView(viewName);
+        loadReports();
+        return;
+      }
+
       switchView(viewName);
     });
   });
+
+  if (reportsWindowSelect) {
+    reportsWindowSelect.addEventListener("change", () => loadReports());
+  }
 
   document.querySelectorAll(".tab").forEach((button) => {
     button.addEventListener("click", () => {
@@ -1109,9 +1756,22 @@ function bindEvents() {
     });
   });
 
-  bookingDateInput.addEventListener("change", loadDesksAndBookings);
+  bookingDateInput.addEventListener("change", () => {
+    clearTeamBlockResult();
+    loadDesksAndBookings();
+  });
   bookButton.addEventListener("click", createBooking);
   cancelButton.addEventListener("click", cancelBooking);
+
+  if (teamBlockFindButton) {
+    teamBlockFindButton.addEventListener("click", findTeamBlock);
+  }
+  if (teamBlockConfirmButton) {
+    teamBlockConfirmButton.addEventListener("click", confirmTeamBlock);
+  }
+  document.querySelectorAll('input[name="teamBlockSlot"]').forEach((input) => {
+    input.addEventListener("change", () => clearTeamBlockResult());
+  });
 
   if (slotToggle) {
     slotToggle.addEventListener("change", (event) => {
@@ -1249,7 +1909,11 @@ async function init() {
     await loadMe();
     await loadUsers();
     await refreshSettingsFromDb();
+    await loadUserHistory();
     await loadDesksAndBookings();
+    if (initialView === "reports") {
+      loadReports();
+    }
   } catch (error) {
     console.error(error);
     floorSummary.textContent = "Unable to load desk data right now.";

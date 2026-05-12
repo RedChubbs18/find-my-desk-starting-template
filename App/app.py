@@ -22,6 +22,7 @@ from App.config import build_config
 from App.extensions import db
 from App.routes.api_bookings import api_bookings_bp
 from App.routes.api_desks import api_desks_bp
+from App.routes.api_reports import api_reports_bp
 from App.routes.api_weather import api_weather_bp
 from App.routes.api_users import api_users_bp
 from App.routes.auth import auth_bp
@@ -41,7 +42,7 @@ def create_app():
 
     _init_azure_auth(app)
 
-    for bp in (pages_bp, auth_bp, api_users_bp, api_desks_bp, api_bookings_bp, api_weather_bp):
+    for bp in (pages_bp, auth_bp, api_users_bp, api_desks_bp, api_bookings_bp, api_weather_bp, api_reports_bp):
         app.register_blueprint(bp)
 
     return app
@@ -53,12 +54,17 @@ def _ensure_users_schema():
         return
 
     columns = {col["name"] for col in inspect(users_engine).get_columns("app_users")}
-    if "anchor_days" in columns:
+    additions = [
+        ("anchor_days", "ALTER TABLE app_users ADD COLUMN anchor_days JSON"),
+        ("auto_checkin", "ALTER TABLE app_users ADD COLUMN auto_checkin BOOLEAN NOT NULL DEFAULT 0"),
+    ]
+    missing = [(name, sql) for name, sql in additions if name not in columns]
+    if not missing:
         return
 
-    # Backward-compatible schema patch for existing databases.
     with users_engine.begin() as conn:
-        conn.execute(text("ALTER TABLE app_users ADD COLUMN anchor_days JSON"))
+        for _, sql in missing:
+            conn.execute(text(sql))
 
 
 def _ensure_bookings_schema():
@@ -74,6 +80,9 @@ def _ensure_bookings_schema():
             conn.execute(text(
                 "ALTER TABLE bookings ADD COLUMN slot VARCHAR(8) NOT NULL DEFAULT 'full'"
             ))
+        if "booked_by_email" not in columns:
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN booked_by_email VARCHAR(255)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bookings_booked_by_email ON bookings(booked_by_email)"))
 
         # SQLite bakes inline UNIQUE constraints into the CREATE TABLE statement —
         # they can't be dropped via DROP INDEX. Detect the legacy 2-column constraint

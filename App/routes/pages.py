@@ -17,6 +17,11 @@ def settings_page():
     return render_template("index.html", initial_view="settings")
 
 
+@pages_bp.get("/reports")
+def reports_page():
+    return render_template("index.html", initial_view="reports")
+
+
 @pages_bp.get("/floorplans/<path:filename>")
 def floorplan_image(filename):
     return send_from_directory(_FLOORPLAN_DIR, filename)

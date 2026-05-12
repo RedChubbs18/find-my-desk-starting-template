@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy.exc import IntegrityError
 
 from App.extensions import db
-from App.models import Booking, Desk
+from App.models import AppUser, Booking, Desk
 from App.services.dates import parse_date_arg
 from App.services.users import get_effective_user
 
@@ -129,6 +129,97 @@ def create_booking():
     ), 201
 
 
+@api_bookings_bp.post("/team-block")
+def create_team_block():
+    payload = request.get_json(silent=True) or {}
+
+    booking_date, error = parse_date_arg(payload.get("date"))
+    if error:
+        return error
+
+    slot = _normalize_slot(payload.get("slot"))
+    if slot is None:
+        return jsonify({"error": "slot must be one of full, am, pm"}), 400
+
+    assignments = payload.get("assignments")
+    if not isinstance(assignments, list) or not assignments:
+        return jsonify({"error": "assignments must be a non-empty array"}), 400
+
+    seen_desks = set()
+    seen_emails = set()
+    cleaned = []
+    for item in assignments:
+        if not isinstance(item, dict):
+            return jsonify({"error": "each assignment must be an object"}), 400
+        desk_id = str(item.get("deskId") or "").strip()
+        email = str(item.get("email") or "").strip().lower()
+        if not desk_id or not email:
+            return jsonify({"error": "each assignment needs deskId and email"}), 400
+        if desk_id in seen_desks:
+            return jsonify({"error": f"duplicate deskId {desk_id} in block"}), 400
+        if email in seen_emails:
+            return jsonify({"error": f"duplicate email {email} in block"}), 400
+        seen_desks.add(desk_id)
+        seen_emails.add(email)
+        cleaned.append((desk_id, email))
+
+    desks = {d.id: d for d in Desk.query.filter(Desk.id.in_(seen_desks)).all()}
+    missing = seen_desks - set(desks.keys())
+    if missing:
+        return jsonify({"error": f"unknown deskIds: {sorted(missing)}"}), 404
+
+    users_by_email = {
+        (u.email or "").lower(): u
+        for u in AppUser.query.filter(AppUser.email.in_(seen_emails)).all()
+    }
+    missing_users = seen_emails - set(users_by_email.keys())
+    if missing_users:
+        return jsonify({"error": f"unknown users: {sorted(missing_users)}"}), 404
+
+    existing = Booking.query.filter(
+        Booking.date == booking_date,
+        Booking.desk_id.in_(seen_desks),
+    ).all()
+    for row in existing:
+        if row.slot == "full" or slot == "full" or row.slot == slot:
+            return jsonify({
+                "error": f"desk {row.desk_id} already booked for that slot",
+            }), 409
+
+    booker = get_effective_user()
+    booker_email = (booker.get("email") or "").strip().lower()
+    if not booker_email:
+        return jsonify({"error": "No active user"}), 400
+    source = (booker.get("source") or "demo") + "-team-block"
+    created = []
+    for desk_id, email in cleaned:
+        user = users_by_email[email]
+        booking = Booking(
+            desk_id=desk_id,
+            date=booking_date,
+            slot=slot,
+            user_email=user.email,
+            user_name=user.full_name or email,
+            source=source,
+            booked_by_email=booker_email,
+        )
+        db.session.add(booking)
+        created.append({"deskId": desk_id, "email": user.email, "name": user.full_name})
+
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "Conflict booking one of the desks; nothing saved."}), 409
+
+    return jsonify({
+        "ok": True,
+        "date": booking_date.isoformat(),
+        "slot": slot,
+        "bookings": created,
+    }), 201
+
+
 @api_bookings_bp.post("/extend")
 def extend_my_half_bookings():
     booking_date, error = parse_date_arg(request.args.get("date"))
@@ -213,13 +304,16 @@ def cancel_booking(desk_id):
         return jsonify({"error": "slot must be one of full, am, pm"}), 400
 
     user = get_effective_user()
+    requester_email = (user.get("email") or "").strip().lower()
     booking = Booking.query.filter_by(
         desk_id=desk_id, date=booking_date, slot=slot
     ).first()
     if booking is None:
         return jsonify({"error": "No booking found for that desk/date/slot"}), 404
-    if booking.user_email != user["email"]:
-        return jsonify({"error": "You can only cancel your own booking"}), 403
+    owner = (booking.user_email or "").strip().lower()
+    booker = (booking.booked_by_email or "").strip().lower()
+    if requester_email not in (owner, booker) or not requester_email:
+        return jsonify({"error": "You can only cancel bookings you made or own"}), 403
 
     db.session.delete(booking)
     db.session.commit()
