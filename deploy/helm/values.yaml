@@ -1,0 +1,93 @@
+namespace: team-orbit
+environment: dev
+imageRegistry: ""
+
+# Shared environment variables for all services
+globalEnv:
+  NODE_ENV: development
+  LOG_LEVEL: debug
+  ENTRA_CLIENT_ID: "993fb07a-161e-452f-9081-f2db2e6b5930"
+  ENTRA_TENANT_ID: "a96476fa-ab5b-4694-88e2-5843ab149973"
+  API_AUDIENCE: "api://993fb07a-161e-452f-9081-f2db2e6b5930"
+  API_REQUIRED_SCOPE: ""
+
+# Service-specific configurations
+services:
+  api-gateway-bff:
+    port: 3000
+    replicaCount: 1
+    image:
+      repository: "${IMAGE_REGISTRY}team-orbit/api-gateway-bff"
+      tag: latest
+    env:
+      PORT: "3000"
+      DIRECTORY_SERVICE_URL: "http://directory-service:3001"
+      NEIGHBOURHOOD_SERVICE_URL: "http://neighbourhood-service:3002"
+      BOOKING_SERVICE_URL: "http://booking-service:3003"
+      RECOMMENDATION_SERVICE_URL: "http://recommendation-service:3004"
+    secrets:
+      JWT_SECRET: "change-in-production"
+  
+  directory-service:
+    port: 3001
+    replicaCount: 1
+    image:
+      repository: "${IMAGE_REGISTRY}team-orbit/directory-service"
+      tag: latest
+    env:
+      PORT: "3001"
+    secrets:
+      JWT_SECRET: "change-in-production"
+      GRAPH_CLIENT_ID: "993fb07a-161e-452f-9081-f2db2e6b5930"
+      GRAPH_CLIENT_SECRET: ""
+      GRAPH_TENANT_ID: "a96476fa-ab5b-4694-88e2-5843ab149973"
+  
+  neighbourhood-service:
+    port: 3002
+    replicaCount: 1
+    image:
+      repository: "${IMAGE_REGISTRY}team-orbit/neighbourhood-service"
+      tag: latest
+    env:
+      PORT: "3002"
+    secrets:
+      JWT_SECRET: "change-in-production"
+  
+  booking-service:
+    port: 3003
+    replicaCount: 1
+    image:
+      repository: "${IMAGE_REGISTRY}team-orbit/booking-service"
+      tag: latest
+    env:
+      PORT: "3003"
+    secrets:
+      JWT_SECRET: "change-in-production"
+  
+  recommendation-service:
+    port: 3004
+    replicaCount: 1
+    image:
+      repository: "${IMAGE_REGISTRY}team-orbit/recommendation-service"
+      tag: latest
+    env:
+      PORT: "3004"
+      DIRECTORY_SERVICE_URL: "http://directory-service:3001"
+      NEIGHBOURHOOD_SERVICE_URL: "http://neighbourhood-service:3002"
+    secrets:
+      JWT_SECRET: "change-in-production"
+      FOUNDRY_ENDPOINT: ""
+      FOUNDRY_KEY: ""
+
+# Frontend configuration
+frontend:
+  port: 5173
+  replicaCount: 1
+  image:
+    repository: "${IMAGE_REGISTRY}team-orbit/frontend"
+    tag: latest
+  env:
+    VITE_ENTRA_CLIENT_ID: "993fb07a-161e-452f-9081-f2db2e6b5930"
+    VITE_ENTRA_AUTHORITY: "https://login.microsoftonline.com/a96476fa-ab5b-4694-88e2-5843ab149973"
+    VITE_ENTRA_REDIRECT_URI: "https://team-orbit.example.com"
+    VITE_ENTRA_SCOPES: "openid profile email"

@@ -1,0 +1,13 @@
+{
+  "name": "@team-orbit/http-client",
+  "version": "0.1.0",
+  "description": "HTTP client with resilience patterns for Team Orbit",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@team-orbit/contracts": "*"
+  }
+}

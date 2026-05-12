@@ -1,0 +1,13 @@
+{
+  "name": "@team-orbit/observability",
+  "version": "0.1.0",
+  "description": "Logging, tracing, and metrics for Team Orbit services",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@team-orbit/contracts": "*"
+  }
+}

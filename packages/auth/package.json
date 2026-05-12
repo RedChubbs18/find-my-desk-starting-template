@@ -1,0 +1,18 @@
+{
+  "name": "@team-orbit/auth",
+  "version": "0.1.0",
+  "description": "Authentication and authorization middleware for Team Orbit",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@team-orbit/contracts": "*",
+    "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.5"
+  }
+}

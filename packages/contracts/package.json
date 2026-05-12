@@ -1,0 +1,12 @@
+{
+  "name": "@team-orbit/contracts",
+  "version": "0.1.0",
+  "description": "Canonical contracts for Team Orbit microservices",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {}
+}

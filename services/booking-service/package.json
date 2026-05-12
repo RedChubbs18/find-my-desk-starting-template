@@ -1,0 +1,21 @@
+{
+  "name": "booking-service",
+  "version": "0.1.0",
+  "description": "Booking Service - Desk reservations and workflow",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "@team-orbit/contracts": "*",
+    "@team-orbit/auth": "*",
+    "@team-orbit/observability": "*",
+    "@team-orbit/http-client": "*",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21"
+  }
+}
