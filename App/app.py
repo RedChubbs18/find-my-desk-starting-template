@@ -54,12 +54,17 @@ def _ensure_users_schema():
         return
 
     columns = {col["name"] for col in inspect(users_engine).get_columns("app_users")}
-    if "anchor_days" in columns:
+    additions = [
+        ("anchor_days", "ALTER TABLE app_users ADD COLUMN anchor_days JSON"),
+        ("auto_checkin", "ALTER TABLE app_users ADD COLUMN auto_checkin BOOLEAN NOT NULL DEFAULT 0"),
+    ]
+    missing = [(name, sql) for name, sql in additions if name not in columns]
+    if not missing:
         return
 
-    # Backward-compatible schema patch for existing databases.
     with users_engine.begin() as conn:
-        conn.execute(text("ALTER TABLE app_users ADD COLUMN anchor_days JSON"))
+        for _, sql in missing:
+            conn.execute(text(sql))
 
 
 def _ensure_bookings_schema():
