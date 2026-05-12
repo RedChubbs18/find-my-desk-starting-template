@@ -1099,10 +1099,14 @@ function userBookingsForCurrentDate() {
 function syncReleaseDeskButton() {
   if (!releaseDeskButton) return;
   const mine = userBookingsForCurrentDate();
-  releaseDeskButton.disabled = mine.length === 0;
-  releaseDeskButton.title = mine.length === 0
-    ? "You have no bookings to release for this day"
-    : `Release ${mine.length} booking${mine.length === 1 ? "" : "s"} for ${selectedDate()}`;
+  const hasBookings = mine.length > 0;
+  releaseDeskButton.hidden = !hasBookings;
+  releaseDeskButton.disabled = !hasBookings;
+  if (hasBookings) {
+    releaseDeskButton.title = `Release ${mine.length} booking${mine.length === 1 ? "" : "s"} for ${selectedDate()}`;
+  } else {
+    releaseDeskButton.removeAttribute("title");
+  }
 }
 
 function extendableHalfBookings() {
