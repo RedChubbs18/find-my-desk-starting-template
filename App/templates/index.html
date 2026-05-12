@@ -20,6 +20,7 @@
             <div class="nav-links" role="tablist" aria-label="Main views">
                 <button class="nav-tab {% if initial_view == 'bookings' %}active{% endif %}" data-view="bookings" role="tab" aria-selected="{% if initial_view == 'bookings' %}true{% else %}false{% endif %}">📋 Bookings</button>
                 <button class="nav-tab {% if initial_view == 'settings' %}active{% endif %}" data-view="settings" role="tab" aria-selected="{% if initial_view == 'settings' %}true{% else %}false{% endif %}">⚙️ User Settings</button>
+                <button class="nav-tab {% if initial_view == 'reports' %}active{% endif %}" data-view="reports" role="tab" aria-selected="{% if initial_view == 'reports' %}true{% else %}false{% endif %}">📊 Reports</button>
             </div>
             <button id="releaseDeskButton" type="button" class="button release-desk" disabled>Release Desk</button>
             <button id="extendStayButton" type="button" class="button extend-stay hidden">Extend Stay</button>
@@ -150,6 +151,65 @@
                         <button id="resetSettingsButton" type="button" class="button ghost">Reset</button>
                     </div>
                 </form>
+            </article>
+        </section>
+        <section class="reports-layout hidden" data-view-panel="reports">
+            <article class="card reports-panel">
+                <header class="reports-hero">
+                    <div>
+                        <p class="tag">Your Workday</p>
+                        <h2 id="reportsTitle">Your usage</h2>
+                        <p id="reportsMeta" class="muted">Loading the last 30 days...</p>
+                    </div>
+                    <label class="reports-window">
+                        <span class="meta-label">Window</span>
+                        <select id="reportsWindow" aria-label="Reporting window">
+                            <option value="7">Last 7 days</option>
+                            <option value="30" selected>Last 30 days</option>
+                            <option value="90">Last 90 days</option>
+                        </select>
+                    </label>
+                </header>
+
+                <div class="stat-grid" id="reportStats"></div>
+
+                <div class="reports-grid">
+                    <section class="report-block">
+                        <h3>Favourite Desks</h3>
+                        <p class="hint compact-hint">Where you sit most often.</p>
+                        <div id="reportFavouriteDesks" class="desk-list"></div>
+                    </section>
+
+                    <section class="report-block">
+                        <h3>Slot Preference</h3>
+                        <p class="hint compact-hint">How you split the day between AM, PM, and full-day bookings.</p>
+                        <div id="reportSlotSplit" class="slot-split"></div>
+                    </section>
+
+                    <section class="report-block">
+                        <h3>Where You Sit</h3>
+                        <p class="hint compact-hint">Your time across floors and zones.</p>
+                        <div id="reportFloorZone" class="dual-list"></div>
+                    </section>
+
+                    <section class="report-block">
+                        <h3>Weekday Pattern</h3>
+                        <p class="hint compact-hint">Which weekdays you tend to come in.</p>
+                        <div id="reportWeekday" class="weekday-bars"></div>
+                    </section>
+
+                    <section class="report-block">
+                        <h3>Anchor-Day Adherence</h3>
+                        <p id="anchorHint" class="hint compact-hint">How well your bookings line up with your declared anchor days.</p>
+                        <div id="reportAnchor" class="anchor-panel"></div>
+                    </section>
+
+                    <section class="report-block">
+                        <h3>Sitting Near Preferred Colleagues</h3>
+                        <p id="coLocationHint" class="hint compact-hint">When you and a preferred colleague are both in, how often you ended up near each other.</p>
+                        <div id="reportCoLocation" class="co-location-list"></div>
+                    </section>
+                </div>
             </article>
         </section>
     </main>
