@@ -103,6 +103,24 @@
                 <h3>Office Busyness</h3>
                 <p id="officeBusyMeta" class="hint compact-hint">Calculating office busyness...</p>
                 <div class="divider"></div>
+                <h3>Team Block Booking</h3>
+                <p class="hint compact-hint">Pick teammates, find a pod of adjacent free desks, then confirm to book one for each.</p>
+                <div id="teamBlockEmpty" class="hint compact-hint">Set your team on your profile to see teammates here.</div>
+                <div id="teamBlockPicker" class="team-block-picker hidden"></div>
+                <div id="teamBlockControls" class="team-block-controls hidden">
+                    <div class="slot-toggle" role="radiogroup" aria-label="Team block slot">
+                        <label><input type="radio" name="teamBlockSlot" value="full" checked /> Full day</label>
+                        <label><input type="radio" name="teamBlockSlot" value="am" /> AM</label>
+                        <label><input type="radio" name="teamBlockSlot" value="pm" /> PM</label>
+                    </div>
+                    <div class="team-block-actions">
+                        <button id="teamBlockFindButton" type="button" class="button">Find Adjacent Desks</button>
+                        <button id="teamBlockConfirmButton" type="button" class="button primary" disabled>Confirm &amp; Book Block</button>
+                    </div>
+                </div>
+                <p id="teamBlockMeta" class="hint compact-hint"></p>
+                <ul id="teamBlockResult" class="team-block-result"></ul>
+                <div class="divider"></div>
                 <h3>Recommended Desks</h3>
                 <p id="recommendationMeta" class="hint compact-hint">Finding your best available desk matches...</p>
                 <ul id="recommendedDeskList" class="recommendation-list"></ul>

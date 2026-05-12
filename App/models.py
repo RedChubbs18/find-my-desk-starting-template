@@ -15,6 +15,7 @@ class Desk(db.Model):
     y_percent = db.Column(db.Float, nullable=False)
     near_window = db.Column(db.Boolean, default=False, nullable=False)
     features = db.Column(JSON, nullable=False, default=list)
+    pod = db.Column(db.String(32), nullable=True, index=True)
 
     def to_api(self):
         return {
@@ -25,6 +26,7 @@ class Desk(db.Model):
             "y": self.y_percent,
             "features": self.features or [],
             "nearWindow": self.near_window,
+            "pod": self.pod,
         }
 
 
@@ -38,6 +40,7 @@ class Booking(db.Model):
     user_email = db.Column(db.String(255), nullable=False, index=True)
     user_name = db.Column(db.String(255), nullable=False)
     source = db.Column(db.String(32), nullable=False)
+    booked_by_email = db.Column(db.String(255), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
     __table_args__ = (
@@ -50,6 +53,7 @@ class Booking(db.Model):
             "email": self.user_email,
             "source": self.source,
             "slot": self.slot,
+            "bookedByEmail": self.booked_by_email,
         }
 
 

@@ -4,6 +4,11 @@ const state = {
   selectedDeskId: null,
   selectedSlot: "full",
   recommendedDeskIds: [],
+  teamBlock: {
+    selectedEmails: [],
+    recommendedDeskIds: [],
+    pod: null,
+  },
   desks: [],
   bookings: {},
   user: null,
@@ -57,6 +62,13 @@ const weatherIcon = document.getElementById("weatherIcon");
 const weatherPanel = document.getElementById("weatherPanel");
 const reportsWindowSelect = document.getElementById("reportsWindow");
 const reportsMeta = document.getElementById("reportsMeta");
+const teamBlockEmpty = document.getElementById("teamBlockEmpty");
+const teamBlockPicker = document.getElementById("teamBlockPicker");
+const teamBlockControls = document.getElementById("teamBlockControls");
+const teamBlockFindButton = document.getElementById("teamBlockFindButton");
+const teamBlockConfirmButton = document.getElementById("teamBlockConfirmButton");
+const teamBlockMeta = document.getElementById("teamBlockMeta");
+const teamBlockResult = document.getElementById("teamBlockResult");
 const TEAM_NEARBY_DISTANCE = 18;
 
 async function loadDeskPreferenceOptions() {
@@ -165,8 +177,18 @@ function getUserBookingOnDesk(desk) {
   const myEmail = (state.user?.email || "").toLowerCase();
   if (!myEmail) return null;
   return getDeskOccupants(desk).find(
-    (booking) => String(booking.email || "").toLowerCase() === myEmail
+    (booking) =>
+      String(booking.email || "").toLowerCase() === myEmail ||
+      String(booking.bookedByEmail || "").toLowerCase() === myEmail
   ) || null;
+}
+
+function isBookingCancellableByMe(booking) {
+  const myEmail = (state.user?.email || "").toLowerCase();
+  if (!myEmail || !booking) return false;
+  const owner = String(booking.email || "").toLowerCase();
+  const booker = String(booking.bookedByEmail || "").toLowerCase();
+  return owner === myEmail || booker === myEmail;
 }
 
 function computeAvailableSlots(desk) {
@@ -602,6 +624,187 @@ function renderRecommendations() {
   });
 }
 
+function getTeammatesForBlock() {
+  const myTeam = currentUserTeam();
+  if (!myTeam) return [];
+  return state.users
+    .filter((user) => {
+      const team = String(user.team || "").trim().toLowerCase();
+      return team && team === myTeam;
+    })
+    .sort((a, b) => (a.fullName || "").localeCompare(b.fullName || ""));
+}
+
+function teamBlockSlotValue() {
+  const checked = document.querySelector('input[name="teamBlockSlot"]:checked');
+  return checked ? checked.value : "full";
+}
+
+function renderTeamBlockPicker() {
+  if (!teamBlockPicker || !teamBlockEmpty || !teamBlockControls) return;
+  const teammates = getTeammatesForBlock();
+  const myEmail = (state.user?.email || "").toLowerCase();
+
+  state.teamBlock.selectedEmails = state.teamBlock.selectedEmails.filter((email) =>
+    teammates.some((t) => (t.email || "").toLowerCase() === email)
+  );
+  if (myEmail && teammates.some((t) => (t.email || "").toLowerCase() === myEmail)
+    && !state.teamBlock.selectedEmails.includes(myEmail)) {
+    state.teamBlock.selectedEmails.unshift(myEmail);
+  }
+
+  if (teammates.length === 0) {
+    teamBlockEmpty.classList.remove("hidden");
+    teamBlockPicker.classList.add("hidden");
+    teamBlockControls.classList.add("hidden");
+    teamBlockPicker.innerHTML = "";
+    clearTeamBlockResult("Set your team on your profile to see teammates here.");
+    return;
+  }
+
+  teamBlockEmpty.classList.add("hidden");
+  teamBlockPicker.classList.remove("hidden");
+  teamBlockControls.classList.remove("hidden");
+
+  teamBlockPicker.innerHTML = "";
+  teammates.forEach((user) => {
+    const email = (user.email || "").toLowerCase();
+    const isMe = email === myEmail;
+    const label = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = email;
+    input.checked = state.teamBlock.selectedEmails.includes(email);
+    if (input.checked) label.classList.add("checked");
+    input.addEventListener("change", () => {
+      if (input.checked) {
+        if (!state.teamBlock.selectedEmails.includes(email)) {
+          state.teamBlock.selectedEmails.push(email);
+        }
+        label.classList.add("checked");
+      } else {
+        state.teamBlock.selectedEmails = state.teamBlock.selectedEmails.filter((e) => e !== email);
+        label.classList.remove("checked");
+      }
+      clearTeamBlockResult();
+      updateTeamBlockConfirmState();
+    });
+    const displayName = `${user.fullName || email}${isMe ? " (you)" : ""}`;
+    label.append(input, ` ${displayName}`);
+    teamBlockPicker.appendChild(label);
+  });
+
+  updateTeamBlockConfirmState();
+}
+
+function updateTeamBlockConfirmState() {
+  if (!teamBlockConfirmButton) return;
+  const matches =
+    state.teamBlock.recommendedDeskIds.length > 0 &&
+    state.teamBlock.recommendedDeskIds.length === state.teamBlock.selectedEmails.length;
+  teamBlockConfirmButton.disabled = !matches;
+}
+
+function clearTeamBlockResult(message) {
+  state.teamBlock.recommendedDeskIds = [];
+  state.teamBlock.pod = null;
+  if (teamBlockResult) teamBlockResult.innerHTML = "";
+  if (teamBlockMeta) teamBlockMeta.textContent = message || "";
+  updateTeamBlockConfirmState();
+  if (typeof renderDeskPins === "function") renderDeskPins();
+}
+
+function renderTeamBlockResult(deskIds, teammates, info) {
+  if (!teamBlockResult) return;
+  teamBlockResult.innerHTML = "";
+  deskIds.forEach((deskId, i) => {
+    const user = teammates[i];
+    const li = document.createElement("li");
+    const name = createElement("span", user?.fullName || user?.email || "Teammate");
+    const tag = createElement("span", `Desk ${deskLabel(deskId)}`);
+    tag.className = "desk-tag";
+    li.append(name, tag);
+    teamBlockResult.appendChild(li);
+  });
+  if (teamBlockMeta) {
+    const pods = Array.isArray(info?.pods) && info.pods.length > 0
+      ? info.pods
+      : info?.pod ? [info.pod] : [];
+    const podLabel = pods.length > 1 ? `Pods ${pods.join(" + ")}` : pods.length === 1 ? `Pod ${pods[0]}` : "Block";
+    const where = info?.floor
+      ? `${info.floor === "first" ? "First" : "Ground"} floor • ${info.zone || ""}`
+      : "";
+    teamBlockMeta.textContent = `${podLabel}${where ? ` — ${where}` : ""}. Confirm to book.`;
+  }
+}
+
+async function findTeamBlock() {
+  if (!teamBlockFindButton) return;
+  const selected = state.teamBlock.selectedEmails;
+  if (selected.length < 2) {
+    clearTeamBlockResult("Pick at least 2 teammates to find a block.");
+    return;
+  }
+  if (selected.length > 12) {
+    clearTeamBlockResult("Pick 12 or fewer teammates.");
+    return;
+  }
+  teamBlockFindButton.disabled = true;
+  try {
+    const payload = await fetchJSON("/api/team-block-recommend", {
+      method: "POST",
+      body: JSON.stringify({
+        count: selected.length,
+        slot: teamBlockSlotValue(),
+        date: selectedDate(),
+        floor: state.currentFloor,
+      }),
+    });
+    if (!payload.deskIds || payload.deskIds.length === 0) {
+      clearTeamBlockResult(payload.message || "No adjacent block of that size is free.");
+      return;
+    }
+    state.teamBlock.recommendedDeskIds = payload.deskIds;
+    state.teamBlock.pod = payload.pod || (payload.pods || []).join(" + ") || null;
+    const teammates = selected.map((email) => getUserByEmail(email)).filter(Boolean);
+    renderTeamBlockResult(payload.deskIds, teammates, payload);
+    if (payload.floor && payload.floor !== state.currentFloor) {
+      setFloor(payload.floor);
+    }
+    renderDeskPins();
+    updateTeamBlockConfirmState();
+  } catch (error) {
+    clearTeamBlockResult(error.message);
+  } finally {
+    teamBlockFindButton.disabled = false;
+  }
+}
+
+async function confirmTeamBlock() {
+  const deskIds = state.teamBlock.recommendedDeskIds;
+  const emails = state.teamBlock.selectedEmails;
+  if (deskIds.length === 0 || deskIds.length !== emails.length) return;
+  teamBlockConfirmButton.disabled = true;
+  try {
+    const assignments = deskIds.map((deskId, i) => ({ deskId, email: emails[i] }));
+    await fetchJSON("/api/bookings/team-block", {
+      method: "POST",
+      body: JSON.stringify({
+        date: selectedDate(),
+        slot: teamBlockSlotValue(),
+        assignments,
+      }),
+    });
+    clearTeamBlockResult(`Booked ${deskIds.length} adjacent desks for your team.`);
+    state.teamBlock.selectedEmails = [];
+    renderTeamBlockPicker();
+    await loadDesksAndBookings();
+  } catch (error) {
+    window.alert(error.message);
+    teamBlockConfirmButton.disabled = false;
+  }
+}
+
 async function fetchJSON(url, options = {}) {
   const response = await fetch(url, {
     headers: { "Content-Type": "application/json" },
@@ -696,6 +899,16 @@ function renderSelectedDesk() {
     ? `Same team as you${teamName ? ` (${teamName})` : ""}`
     : "";
 
+  const myEmail = (state.user?.email || "").toLowerCase();
+  const bookedByMe = occupants.filter(
+    (b) =>
+      String(b.bookedByEmail || "").toLowerCase() === myEmail &&
+      String(b.email || "").toLowerCase() !== myEmail
+  );
+  const bookerLine = bookedByMe.length > 0
+    ? `Booked by you for ${bookedByMe.map((b) => b.name).join(" / ")}`
+    : "";
+
   const children = [
     createElement("h4", `Desk ${deskLabel(desk.id)} · ${desk.zone}`),
     createElement("p", features || "No features listed"),
@@ -708,6 +921,7 @@ function renderSelectedDesk() {
   if (prefMatch) children.push(createElement("p", prefMatch));
   if (neighborHint) children.push(createElement("p", neighborHint));
   if (teammateLine) children.push(createElement("p", teammateLine));
+  if (bookerLine) children.push(createElement("p", bookerLine));
   selectedDeskCard.replaceChildren(...children);
 
   const available = computeAvailableSlots(desk);
@@ -836,6 +1050,7 @@ async function switchActiveUser(email) {
     body: JSON.stringify({ email }),
   });
 
+  state.teamBlock = { selectedEmails: [], recommendedDeskIds: [], pod: null };
   await loadMe();
   await loadUsers();
   await refreshSettingsFromDb();
@@ -941,6 +1156,7 @@ function tintForBooking(booking) {
 function renderDeskPins() {
   deskLayer.innerHTML = "";
   const recommendedDeskIds = new Set(state.recommendedDeskIds);
+  const teamBlockDeskIds = new Set(state.teamBlock.recommendedDeskIds);
   const visibleDesks = state.desks.filter((desk) => desk.floor === state.currentFloor);
 
   visibleDesks.forEach((desk) => {
@@ -972,6 +1188,7 @@ function renderDeskPins() {
     pin.classList.toggle("half-pm-booked", halfPm);
     pin.classList.toggle("selected", state.selectedDeskId === desk.id);
     pin.classList.toggle("recommended", isRecommended);
+    pin.classList.toggle("team-block", teamBlockDeskIds.has(desk.id));
     pin.classList.toggle("pref-mismatch", !isRecommended && !deskMatchesPreferences(desk));
     pin.classList.toggle("booked-by-teammate", fullyBooked && isBookedByTeammate && !isBookedByPreferredUser);
     pin.classList.toggle("booked-by-preferred", fullyBooked && isBookedByPreferredUser);
@@ -1031,6 +1248,7 @@ async function loadUsers() {
   renderSelectedPreferredUsers();
   renderPreferredUserResults(preferredUserSearch?.value || "");
   renderRecommendations();
+  renderTeamBlockPicker();
 }
 
 async function loadDesksAndBookings() {
@@ -1533,9 +1751,22 @@ function bindEvents() {
     });
   });
 
-  bookingDateInput.addEventListener("change", loadDesksAndBookings);
+  bookingDateInput.addEventListener("change", () => {
+    clearTeamBlockResult();
+    loadDesksAndBookings();
+  });
   bookButton.addEventListener("click", createBooking);
   cancelButton.addEventListener("click", cancelBooking);
+
+  if (teamBlockFindButton) {
+    teamBlockFindButton.addEventListener("click", findTeamBlock);
+  }
+  if (teamBlockConfirmButton) {
+    teamBlockConfirmButton.addEventListener("click", confirmTeamBlock);
+  }
+  document.querySelectorAll('input[name="teamBlockSlot"]').forEach((input) => {
+    input.addEventListener("change", () => clearTeamBlockResult());
+  });
 
   if (slotToggle) {
     slotToggle.addEventListener("change", (event) => {

@@ -628,6 +628,81 @@ input[type="date"] {
   background: linear-gradient(90deg, #ff8c00 50%, #ff1f1f 50%) !important;
 }
 
+.team-block-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.4rem 0;
+  max-height: 9.5rem;
+  overflow-y: auto;
+  padding: 0.25rem;
+  border: 1px solid rgba(167, 127, 97, 0.25);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.team-block-picker label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+}
+
+.team-block-picker label.checked {
+  background: rgba(30, 99, 255, 0.15);
+  color: #1e3a8a;
+  font-weight: 600;
+}
+
+.team-block-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-top: 0.35rem;
+}
+
+.team-block-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.team-block-result {
+  list-style: none;
+  padding: 0;
+  margin: 0.4rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.team-block-result li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 6px;
+  background: rgba(30, 99, 255, 0.08);
+  font-size: 0.85rem;
+}
+
+.team-block-result li .desk-tag {
+  font-family: "DM Sans", monospace;
+  font-weight: 700;
+  color: #1e3a8a;
+}
+
+.desk-pin.team-block {
+  outline: 3px solid #1e63ff;
+  outline-offset: 2px;
+  background: #1e63ff !important;
+  z-index: 2;
+}
+
 .slot-toggle {
   display: flex;
   gap: 0.75rem;

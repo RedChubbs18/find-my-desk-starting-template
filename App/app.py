@@ -75,6 +75,9 @@ def _ensure_bookings_schema():
             conn.execute(text(
                 "ALTER TABLE bookings ADD COLUMN slot VARCHAR(8) NOT NULL DEFAULT 'full'"
             ))
+        if "booked_by_email" not in columns:
+            conn.execute(text("ALTER TABLE bookings ADD COLUMN booked_by_email VARCHAR(255)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_bookings_booked_by_email ON bookings(booked_by_email)"))
 
         # SQLite bakes inline UNIQUE constraints into the CREATE TABLE statement —
         # they can't be dropped via DROP INDEX. Detect the legacy 2-column constraint
