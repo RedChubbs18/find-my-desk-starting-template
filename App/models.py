@@ -11,8 +11,8 @@ class Desk(db.Model):
     id = db.Column(db.String(16), primary_key=True)
     floor = db.Column(db.String(32), nullable=False)
     zone = db.Column(db.String(64), nullable=False)
-    x_percent = db.Column(db.Integer, nullable=False)
-    y_percent = db.Column(db.Integer, nullable=False)
+    x_percent = db.Column(db.Float, nullable=False)
+    y_percent = db.Column(db.Float, nullable=False)
     near_window = db.Column(db.Boolean, default=False, nullable=False)
     features = db.Column(JSON, nullable=False, default=list)
 

@@ -996,7 +996,7 @@ function renderDeskPins() {
     } else {
       statusGlyph = "✓";
     }
-    pin.textContent = `${deskLabel(desk.id)} ${statusGlyph}`;
+    pin.textContent = statusGlyph;
 
     if (fullTaken) {
       pin.title = `Desk ${deskLabel(desk.id)} fully booked`;

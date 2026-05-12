@@ -502,18 +502,19 @@ input[type="date"] {
 .desk-pin {
   position: absolute;
   transform: translate(-50%, -50%);
-  border: none;
-  border-radius: 999px;
+  width: 2.6%;
+  height: 2.1%;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 2px;
   background: #33cc33;
   color: white;
-  font-size: 0.7rem;
+  font-size: 0.6rem;
+  line-height: 1;
   font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  min-width: 3rem;
-  padding: 0.28rem 0.45rem;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   cursor: pointer;
   transition: transform 150ms ease;
   box-shadow: none !important;
@@ -1327,9 +1328,7 @@ input[type="date"] {
   }
 
   .desk-pin {
-    font-size: 0.6rem;
-    min-width: 2.4rem;
-    padding: 0.22rem 0.35rem;
+    font-size: 0.5rem;
   }
 
   .meta-item {
