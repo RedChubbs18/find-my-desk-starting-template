@@ -17,6 +17,7 @@ const state = {
     deskPreferences: [],
     preferredUsers: [],
     anchorDays: [],
+    autoCheckin: false,
   },
   validDeskPreferences: [],
   busyness: null,
@@ -123,9 +124,10 @@ async function loadSettings() {
       deskPreferences: Array.isArray(parsed.deskPreferences) ? parsed.deskPreferences : [],
       preferredUsers: Array.isArray(parsed.preferredUsers) ? parsed.preferredUsers : [],
       anchorDays: Array.isArray(parsed.anchorDays) ? parsed.anchorDays : [],
+      autoCheckin: Boolean(parsed.autoCheckin),
     };
   } catch {
-    state.settings = { deskPreferences: [], preferredUsers: [], anchorDays: [] };
+    state.settings = { deskPreferences: [], preferredUsers: [], anchorDays: [], autoCheckin: false };
   }
 }
 
@@ -139,6 +141,7 @@ async function saveSettings() {
     deskPreferences: Array.isArray(payload.deskPreferences) ? payload.deskPreferences : [],
     preferredUsers: Array.isArray(payload.preferredUsers) ? payload.preferredUsers : [],
     anchorDays: Array.isArray(payload.anchorDays) ? payload.anchorDays : [],
+    autoCheckin: Boolean(payload.autoCheckin),
   };
 
   return payload;
@@ -328,6 +331,8 @@ function hydrateSettingsForm() {
   settingsForm.querySelectorAll('input[name="anchorDays"]').forEach((input) => {
     input.checked = state.settings.anchorDays.includes(input.value);
   });
+  const autoCheckinInput = settingsForm.querySelector('input[name="autoCheckin"]');
+  if (autoCheckinInput) autoCheckinInput.checked = Boolean(state.settings.autoCheckin);
   renderSelectedPreferredUsers();
   renderPreferredUserResults(preferredUserSearch?.value || "");
 }
@@ -1811,11 +1816,13 @@ function bindEvents() {
     const selectedAnchorDays = Array.from(
       settingsForm.querySelectorAll('input[name="anchorDays"]:checked')
     ).map((input) => input.value);
+    const autoCheckinInput = settingsForm.querySelector('input[name="autoCheckin"]');
 
     state.settings = {
       deskPreferences: selectedPreferences,
       preferredUsers: [...state.settings.preferredUsers],
       anchorDays: selectedAnchorDays,
+      autoCheckin: Boolean(autoCheckinInput?.checked),
     };
 
     let savePayload;
@@ -1856,7 +1863,7 @@ function bindEvents() {
 
   if (resetSettingsButton) {
     resetSettingsButton.addEventListener("click", async () => {
-      state.settings = { deskPreferences: [], preferredUsers: [], anchorDays: [] };
+      state.settings = { deskPreferences: [], preferredUsers: [], anchorDays: [], autoCheckin: false };
       try {
         await saveSettings();
       } catch (error) {
